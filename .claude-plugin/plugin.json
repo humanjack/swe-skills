@@ -1,0 +1,5 @@
+{
+  "name": "repo-analyzer",
+  "description": "GitHub repo analyzer with rich Mermaid visualizations + one-step issue posting",
+  "author": { "name": "humanjack" }
+}
