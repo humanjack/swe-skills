@@ -20,6 +20,16 @@ The natural-language triggers in the `description` above and the slash commands 
 
 Triggered by `/analyze-repo <github-url>` or phrases like "analyze this github repo: <url>".
 
+### Step 0 — Resolve runtime paths
+
+The `lib/secrets-patterns.txt` file ships with this skill and its location depends on how the skill was installed (symlink → repo path, copy → `~/.claude/skills/repo-analyzer/lib/`, plugin → plugin cache). Resolve it once at workflow start and use the absolute path in every later command.
+
+```bash
+SKILL_DIR="$(dirname "$(readlink -f "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/repo-analyzer/SKILL.md" 2>/dev/null || echo "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/repo-analyzer/SKILL.md")")"
+SECRETS_FILE="$SKILL_DIR/lib/secrets-patterns.txt"
+[ -r "$SECRETS_FILE" ] || { echo "secrets-patterns file not found at $SECRETS_FILE — reinstall the skill"; exit 1; }
+```
+
 ### Step 1 — Parse and validate the URL
 
 Accept `https://github.com/<owner>/<repo>`, `github.com/<owner>/<repo>`, or `<owner>/<repo>`. Reject anything else with a one-line error and stop.
@@ -156,7 +166,7 @@ gh api "repos/$OWNER/$REPO/dependabot/alerts" --paginate 2>/dev/null
 
 Plus, in-tree checks:
 
-- **Secrets scan**: for every regex in `lib/secrets-patterns.txt`, run `git -C "$WORK" grep -nIE -f lib/secrets-patterns.txt`. Note: this lists matches but DO NOT include the matched value in the report — see "Self-redaction" below.
+- **Secrets scan**: run `git -C "$WORK" grep -nIE -f "$SECRETS_FILE"` (the absolute path resolved in Step 0). The `-f` flag is read by the bash process, so the path must be absolute or relative to bash's cwd, **not** to `$WORK`. Note: this lists matches but DO NOT include the matched value in the report — see "Self-redaction" below.
 - **GitHub Actions**: parse `.github/workflows/*.yml`. Flag any of: `permissions: write-all`, `pull_request_target` combined with `${{ github.event.* }}` interpolations, `actions/checkout` against `${{ github.event.pull_request.head.ref }}`.
 - **License**: from `gh repo view --json licenseInfo`. Flag missing or copyleft conflicts.
 - **Dockerfile**: flag `FROM …:latest`, `--privileged`, hard-coded secrets in `ENV`/`ARG`.
@@ -195,7 +205,7 @@ Evidence: `description`, `topics`, README "Use cases"/"Who is this for", inferre
 
 Before writing the final markdown:
 
-1. Run `git grep -nIE -f lib/secrets-patterns.txt` on the rendered report itself. If any match → replace the matched substring with `[REDACTED]` (do **not** drop the line — keep the finding visible).
+1. Run `grep -nIE -f "$SECRETS_FILE" "$REPORT_PATH"` on the rendered report itself (plain `grep`, not `git grep` — the report is not in a git index). If any match → replace the matched substring in `$REPORT_PATH` with `[REDACTED]` (do **not** drop the line — keep the finding visible).
 2. Prepend the provenance header:
    ```html
    <!-- repo-analyzer
@@ -234,7 +244,7 @@ Triggered by `/issue-analysis [--repo owner/name] [--report path] [--yes]` or ph
 
 Default: `.claude/cache/repo-analysis/latest.md`. Override with `--report <path>`. If neither exists:
 
-```
+```text
 No cached analysis found. Run /analyze-repo <url> first.
 ```
 
@@ -258,7 +268,7 @@ Run **without** `-R` so it uses the cwd's git config (i.e. the repo where the us
 
 If Step 3 returned empty / nonzero:
 
-```
+```text
 This directory has no GitHub remote. Options:
   1. cd into a repo with a GitHub remote
   2. Create one:    gh repo create <name> --source=. --public --push
@@ -271,7 +281,7 @@ Stop. Do not prompt-loop.
 
 Always show, then wait for yes/no (skip if `--yes`):
 
-```
+```text
 About to file:
   Title:       Analysis: $ANALYZED_OWNER/$ANALYZED_REPO — $DATE
   Destination: $DEST

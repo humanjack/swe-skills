@@ -37,7 +37,7 @@ Copies files instead of symlinking. Re-run after every edit.
 
 ### Option 3 — Claude Code plugin
 
-Add this repo as a plugin source in Claude Code, then `/plugin install repo-analyzer`. See `./install.sh --plugin` for the exact command.
+Add this repo as a plugin source in Claude Code, then `/plugin install repo-analyzer@swe-skills`. See `./install.sh --plugin` for the exact command.
 
 ### Uninstall
 

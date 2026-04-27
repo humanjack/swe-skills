@@ -5,6 +5,7 @@ allowed-tools:
   - Bash(gh repo view:*)
   - Bash(gh issue create:*)
   - Bash(gh label list:*)
+  - Bash(grep:*)
   - Bash(ls:*)
   - Bash(stat:*)
   - Bash(head:*)
