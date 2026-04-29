@@ -67,11 +67,15 @@ gh repo clone "$OWNER/$REPO" "$WORK" -- --depth=500
 
 ### Step 4 — Inventory
 
+Skip this step in metadata-only mode (Step 3 was bypassed → `$WORK` is unset / has no clone). Emit `> inventory limited in metadata-only mode` in the report and proceed. Otherwise:
+
 ```bash
 git -C "$WORK" ls-files | wc -l                                                 # total tracked files
 git -C "$WORK" log --pretty=format:'%h|%an|%ad|%s' --date=short -100             # recent history
 find "$WORK" -maxdepth 2 -type d -not -path '*/.git*' | sort                     # top-level layout
 ```
+
+Manifest detection (Step 4b) below also depends on a clone — skip it identically in metadata-only mode and rely on `gh api repos/$OWNER/$REPO/contents` (already fetched in Step 2) to get the top-level file list instead.
 
 Detect manifests by file presence:
 
@@ -207,19 +211,21 @@ Evidence: `description`, `topics`, README "Use cases"/"Who is this for", inferre
 | Indie dev | Quick HTTP scripting | 5 |
 ```
 
-### Step 6 — Self-redaction and write
+### Step 6 — Render, redact, finalize, write
 
-Before writing the final markdown, define the cache path explicitly (consistent with how `$WORK` and `$SECRETS_FILE` were introduced):
+Define the cache path explicitly (consistent with how `$WORK` and `$SECRETS_FILE` were introduced):
 
 ```bash
 REPORT_PATH=".claude/cache/repo-analysis/$OWNER-$REPO-$TS.md"
 mkdir -p "$(dirname "$REPORT_PATH")"
+LATEST_PATH=".claude/cache/repo-analysis/latest.md"
 ```
 
-Then:
+Execute in this order — earlier steps must finish before later ones:
 
-1. Run `grep -nIE -f "$SECRETS_FILE" "$REPORT_PATH"` on the rendered report itself (plain `grep`, not `git grep` — the report is not in a git index). If any match → replace the matched substring in `$REPORT_PATH` with `[REDACTED]` (do **not** drop the line — keep the finding visible).
-2. Resolve the provenance commit, then prepend the header. In metadata-only mode (Step 2 skipped the clone for a >500 MB repo), `$WORK` has no `.git` and `git rev-parse` would fail — fall back to a sentinel value:
+1. **Render the body to `$REPORT_PATH`.** Substitute the gathered values from Step 5 into `ANALYSIS_TEMPLATE.md` and write the result. The provenance header is *not* added yet — that happens in step 3.
+2. **Self-redact in place.** Run `grep -nIE -f "$SECRETS_FILE" "$REPORT_PATH"`; for each match, edit `$REPORT_PATH` to replace the matched substring with `[REDACTED]` (use plain `grep`, not `git grep` — the report is not in a git index). Keep the matched line visible — only the value is redacted. Run this *after* the file exists; otherwise `grep` has nothing to scan.
+3. **Resolve the provenance commit and prepend the header.** In metadata-only mode (Step 2 skipped the clone for a >500 MB repo), `$WORK` has no `.git` and `git rev-parse` would fail — fall back to a sentinel:
    ```bash
    if [ -d "$WORK/.git" ]; then
      COMMIT_SHA="$(git -C "$WORK" rev-parse HEAD)"
@@ -227,6 +233,7 @@ Then:
      COMMIT_SHA="metadata-only"
    fi
    ```
+   Then prepend (atomic via tmp file: `cat header.html "$REPORT_PATH" > "$REPORT_PATH.tmp" && mv "$REPORT_PATH.tmp" "$REPORT_PATH"`):
    ```html
    <!-- repo-analyzer
    source: https://github.com/$OWNER/$REPO
@@ -235,14 +242,15 @@ Then:
    schema: 1
    -->
    ```
-3. Write to:
-   - `$REPORT_PATH` (= `.claude/cache/repo-analysis/$OWNER-$REPO-$TS.md`)
-   - `.claude/cache/repo-analysis/latest.md` (copy of `$REPORT_PATH`, not a symlink)
-4. Prune: keep last 20 timestamped reports.
+4. **Copy to `latest.md`** (not a symlink — copies survive across editors and CI):
+   ```bash
+   cp "$REPORT_PATH" "$LATEST_PATH"
+   ```
+5. **Prune** to keep last 20 timestamped reports:
    ```bash
    ls -t .claude/cache/repo-analysis/*-*.md 2>/dev/null | tail -n +21 | xargs -r rm
    ```
-5. Show the user a 5-line summary (path + repo identity + section count + report byte size + total wall-clock). Do not dump the full report unless asked.
+6. **Show the user** a 5-line summary (path + repo identity + section count + report byte size + total wall-clock). Do not dump the full report unless asked.
 
 ### Failure modes to handle
 
