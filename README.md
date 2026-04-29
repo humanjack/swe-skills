@@ -63,7 +63,7 @@ Add this repo as a plugin source in Claude Code, then `/plugin install repo-anal
 ## Requirements
 
 - `gh` (GitHub CLI), authenticated via `gh auth login`
-- `git` ≥ 2.32 for partial clone (`--filter=blob:none`)
+- `git` — `≥ 2.32` recommended for partial clone (`--filter=blob:none`); older versions automatically fall back to a `--depth=500` shallow clone.
 - Optional: `npm`, `pip-audit` for richer dependency-vulnerability scans (degrades gracefully to Dependabot via `gh api` if missing)
 
 ## Cache
