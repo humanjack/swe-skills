@@ -72,7 +72,7 @@ Reports are cached at `.claude/cache/repo-analysis/` (gitignored). The most rece
 
 ## Layout
 
-```
+```text
 swe-skills/
 ├── .claude-plugin/plugin.json
 ├── skills/repo-analyzer/
