@@ -155,16 +155,20 @@ sequenceDiagram
 
 Run, per applicable manifest, with timeouts so a hang doesn't kill the run:
 
+In-tree audit commands skip silently when the corresponding tool is missing — the failure matrix below mandates fall-through to Dependabot. Guard each invocation with `command -v`:
+
 ```bash
 # Node
-[ -f "$WORK/package-lock.json" ] && (cd "$WORK" && timeout 60 npm audit --json 2>/dev/null)
+[ -f "$WORK/package-lock.json" ] && command -v npm >/dev/null 2>&1 && \
+  (cd "$WORK" && timeout 60 npm audit --json 2>/dev/null)
 # Python
-[ -f "$WORK/requirements.txt" ] && timeout 60 pip-audit -r "$WORK/requirements.txt" --format json 2>/dev/null
-# GitHub Dependabot (works for all stacks; preferred fallback)
+[ -f "$WORK/requirements.txt" ] && command -v pip-audit >/dev/null 2>&1 && \
+  timeout 60 pip-audit -r "$WORK/requirements.txt" --format json 2>/dev/null
+# GitHub Dependabot (works for all stacks; preferred fallback — always runs)
 gh api "repos/$OWNER/$REPO/dependabot/alerts" --paginate 2>/dev/null
 ```
 
-Plus, in-tree checks:
+Plus, in-tree checks (only when a clone is available — in metadata-only mode, skip these and note `> in-tree security checks skipped (metadata-only mode)` in the section):
 
 - **Secrets scan**: run `git -C "$WORK" grep -nIE -f "$SECRETS_FILE"` (the absolute path resolved in Step 0). The `-f` flag is read by the bash process, so the path must be absolute or relative to bash's cwd, **not** to `$WORK`. Note: this lists matches but DO NOT include the matched value in the report — see "Self-redaction" below.
 - **GitHub Actions**: parse `.github/workflows/*.yml`. Flag any of: `permissions: write-all`, `pull_request_target` combined with `${{ github.event.* }}` interpolations, `actions/checkout` against `${{ github.event.pull_request.head.ref }}`.
@@ -206,11 +210,18 @@ Evidence: `description`, `topics`, README "Use cases"/"Who is this for", inferre
 Before writing the final markdown:
 
 1. Run `grep -nIE -f "$SECRETS_FILE" "$REPORT_PATH"` on the rendered report itself (plain `grep`, not `git grep` — the report is not in a git index). If any match → replace the matched substring in `$REPORT_PATH` with `[REDACTED]` (do **not** drop the line — keep the finding visible).
-2. Prepend the provenance header:
+2. Resolve the provenance commit, then prepend the header. In metadata-only mode (Step 2 skipped the clone for a >500 MB repo), `$WORK` has no `.git` and `git rev-parse` would fail — fall back to a sentinel value:
+   ```bash
+   if [ -d "$WORK/.git" ]; then
+     COMMIT_SHA="$(git -C "$WORK" rev-parse HEAD)"
+   else
+     COMMIT_SHA="metadata-only"
+   fi
+   ```
    ```html
    <!-- repo-analyzer
    source: https://github.com/$OWNER/$REPO
-   commit: $(git -C "$WORK" rev-parse HEAD)
+   commit: $COMMIT_SHA
    generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)
    schema: 1
    -->
