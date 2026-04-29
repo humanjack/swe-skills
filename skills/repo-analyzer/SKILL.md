@@ -50,6 +50,8 @@ If any of these fail with 404 → the repo is private or doesn't exist. Stop and
 
 ### Step 3 — Partial clone
 
+Skip this step entirely if Step 2 set metadata-only mode (`diskUsage` > 500 MB). Otherwise:
+
 ```bash
 WORK="/tmp/repo-analyzer/$OWNER-$REPO-$TS"
 mkdir -p "$WORK"
@@ -207,7 +209,14 @@ Evidence: `description`, `topics`, README "Use cases"/"Who is this for", inferre
 
 ### Step 6 — Self-redaction and write
 
-Before writing the final markdown:
+Before writing the final markdown, define the cache path explicitly (consistent with how `$WORK` and `$SECRETS_FILE` were introduced):
+
+```bash
+REPORT_PATH=".claude/cache/repo-analysis/$OWNER-$REPO-$TS.md"
+mkdir -p "$(dirname "$REPORT_PATH")"
+```
+
+Then:
 
 1. Run `grep -nIE -f "$SECRETS_FILE" "$REPORT_PATH"` on the rendered report itself (plain `grep`, not `git grep` — the report is not in a git index). If any match → replace the matched substring in `$REPORT_PATH` with `[REDACTED]` (do **not** drop the line — keep the finding visible).
 2. Resolve the provenance commit, then prepend the header. In metadata-only mode (Step 2 skipped the clone for a >500 MB repo), `$WORK` has no `.git` and `git rev-parse` would fail — fall back to a sentinel value:
@@ -227,8 +236,8 @@ Before writing the final markdown:
    -->
    ```
 3. Write to:
-   - `.claude/cache/repo-analysis/$OWNER-$REPO-$TS.md`
-   - `.claude/cache/repo-analysis/latest.md` (copy, not symlink)
+   - `$REPORT_PATH` (= `.claude/cache/repo-analysis/$OWNER-$REPO-$TS.md`)
+   - `.claude/cache/repo-analysis/latest.md` (copy of `$REPORT_PATH`, not a symlink)
 4. Prune: keep last 20 timestamped reports.
    ```bash
    ls -t .claude/cache/repo-analysis/*-*.md 2>/dev/null | tail -n +21 | xargs -r rm
